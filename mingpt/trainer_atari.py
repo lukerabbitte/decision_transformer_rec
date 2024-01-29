@@ -159,24 +159,26 @@ class Trainer:
     def get_returns(self, ret):
         self.model.train(False)
         total_rewards = []
+        done = True
 
         for i in range(10):
-            state = env.reset()
+            state = env.reset() # CHANGE: State should be the state(user_id) at any index
             state = state.type(torch.float32).to(self.device).unsqueeze(0).unsqueeze(0)
             rtgs = [ret]
             # first state is from env, first rtg is target return, and first timestep is 0
-            sampled_action = sample(self.model.module, state, 1, temperature=1.0, sample=True, actions=None, 
-                rtgs=torch.tensor(rtgs, dtype=torch.long).to(self.device).unsqueeze(0).unsqueeze(-1), 
-                timesteps=torch.zeros((1, 1, 1), dtype=torch.int64).to(self.device))
+            sampled_action = sample(self.model.module, state, 1, temperature=1.0, sample=True, actions=None,
+                                    rtgs=torch.tensor(rtgs, dtype=torch.long).to(self.device).unsqueeze(0).unsqueeze(-1),
+                                    timesteps=torch.zeros((1, 1, 1), dtype=torch.int64).to(self.device))
 
             j = 0
             all_states = state
             actions = []
-            for i in range(10):
-                action = sampled_action.cpu().numpy()[0,-1] # extracting the last sample from the array
+            while True:
+                if done:
+                    state, reward_sum, done = env.reset(), 0, False
+                action = sampled_action.cpu().numpy()[0, -1]
                 actions += [sampled_action]
-                state = # the first of 10
-                reward = env.step(action)
+                state, reward, done = env.step(action)
                 reward_sum += reward
                 j += 1
 
@@ -191,15 +193,13 @@ class Trainer:
                 rtgs += [rtgs[-1] - reward]
                 # all_states has all previous states and rtgs has all previous rtgs (will be cut to block_size in utils.sample)
                 # timestep is just current timestep
-                sampled_action = sample(self.model.module, all_states.unsqueeze(0), 1, temperature=1.0, sample=True, 
-                    actions=torch.tensor(actions, dtype=torch.long).to(self.device).unsqueeze(1).unsqueeze(0), 
-                    rtgs=torch.tensor(rtgs, dtype=torch.long).to(self.device).unsqueeze(0).unsqueeze(-1), 
-                    timesteps=(min(j, self.config.max_timestep) * torch.ones((1, 1, 1), dtype=torch.int64).to(self.device)))
-
-            state = reset
-            reward_sum = 0
-
-        eval_return = sum(total_rewards)
+                sampled_action = sample(self.model.module, all_states.unsqueeze(0), 1, temperature=1.0, sample=True,
+                                        actions=torch.tensor(actions, dtype=torch.long).to(self.device).unsqueeze(
+                                            1).unsqueeze(0),
+                                        rtgs=torch.tensor(rtgs, dtype=torch.long).to(self.device).unsqueeze(
+                                            0).unsqueeze(-1),
+                                        timesteps=(min(j, self.config.max_timestep) * torch.ones((1, 1, 1), dtype=torch.int64).to(self.device)))
+        eval_return = sum(total_rewards) / 10.
         print("target return: %d, eval return: %d" % (ret, eval_return))
         self.model.train(True)
         return eval_return

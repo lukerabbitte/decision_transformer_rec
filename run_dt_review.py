@@ -1,6 +1,6 @@
 import logging
 
-from create_review_dataset import create_review_dataset
+from create_synthetic_review_dataset import create_synthetic_review_dataset
 from mingpt.utils import set_seed
 import numpy as np
 import torch
@@ -12,14 +12,13 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=123) # needed for mingpt
 parser.add_argument('--context_length', type=int, default=30)  # the number of tokens in context
-parser.add_argument('--epochs', type=int, default=1)  # was 5
+parser.add_argument('--epochs', type=int, default=5)  # was 5
 parser.add_argument('--model_type', type=str, default='reward_conditioned')
-parser.add_argument('--num_steps', type=int, default=100)  # was 500000
+parser.add_argument('--num_steps', type=int, default=500000)  # was 500000
 parser.add_argument('--batch_size', type=int, default=128)
 args = parser.parse_args()
 
 set_seed(args.seed)
-
 """
 Perhaps the largest change so far is in how we consider actions.
 
@@ -39,7 +38,7 @@ class ReviewDataset(Dataset):
 
     def __init__(self, states, block_size, actions, terminal_indices, returns_to_go, timesteps):
         self.block_size = block_size
-        self.vocab_size = max(actions) + 1  # 1682 + 1, as vocab size is the space of movies to recommend.
+        self.vocab_size = max(actions) + 1  # Vocab size is the space of items to recommend.
         self.states = states
         self.actions = actions
         self.terminal_indices = terminal_indices
@@ -65,6 +64,42 @@ class ReviewDataset(Dataset):
 
         return states, actions, returns_to_go, timesteps
 
+class EvaluationDataset(Dataset):
+
+    def __init__(self, states, block_size, actions, terminal_indices, returns_to_go, timesteps):
+        self.block_size = block_size # change this to be episode size, determined by checking dataset.
+        self.vocab_size = max(actions) + 1  # 1682 + 1, as vocab size is the space of movies to recommend.
+        self.states = states
+        self.actions = actions
+        self.terminal_indices = terminal_indices
+        self.returns_to_go = returns_to_go
+        self.timesteps = timesteps
+
+        user_indices = [0]
+        post_terminal_indices = [index + 1 for index in terminal_indices]
+        user_indices += post_terminal_indices
+
+        self.user_indices = user_indices
+
+    def __len__(self):
+        return len(self.states) - self.block_size
+
+    # Gets one episode worth of data from states, actions, returns_to_go, and timesteps
+    def __getitem__(self, idx):
+        block_size = self.block_size // 3   # aka, the original context length
+        done_idx = idx + block_size
+        for i in self.terminal_indices:
+            if i > idx:  # find the first terminal index greater than idx
+                done_idx = min(i, done_idx)
+                break
+        idx = done_idx - block_size # get data the size of context length (30) from index up to done index
+        states = torch.tensor(np.array(self.states[idx:done_idx]), dtype=torch.float32).unsqueeze(1)
+        actions = torch.tensor(self.actions[idx:done_idx], dtype=torch.long).unsqueeze(1)  # (block_size, 1)
+        returns_to_go = torch.tensor(self.returns_to_go[idx:done_idx], dtype=torch.float32).unsqueeze(1)
+        timesteps = torch.tensor(self.timesteps[idx:idx + 1], dtype=torch.int64).unsqueeze(1)
+
+        return states, actions, returns_to_go, timesteps
+
 # Set up logging
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -73,12 +108,12 @@ logging.basicConfig(
 )
 
 # Train
-states, actions, returns, terminal_indices, returns_to_go, timesteps = create_review_dataset("ml-100k/u1.base")
+states, actions, returns, terminal_indices, returns_to_go, timesteps = create_synthetic_review_dataset()
 train_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, timesteps)
 
-# # Test
-# states, actions, returns, terminal_indices, returns_to_go, timesteps = create_review_dataset("ml-100k/u1.test")
-# test_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, timesteps)
+# Test
+states, actions, returns, terminal_indices, returns_to_go, timesteps = create_synthetic_review_dataset(min_ratings_per_user=273, max_ratings_per_user=273)
+test_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, timesteps)
 
 mconf = GPTConfig(train_dataset.vocab_size, train_dataset.block_size,
                   n_layer=6, n_head=8, n_embd=128, model_type=args.model_type, max_timestep=max(timesteps))
