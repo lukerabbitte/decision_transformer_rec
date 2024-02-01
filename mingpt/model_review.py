@@ -28,9 +28,11 @@ logger = logging.getLogger(__name__)
 
 import numpy as np
 
+
 class GELU(nn.Module):
     def forward(self, input):
         return F.gelu(input)
+
 
 class GPTConfig:
     """ base GPT config, params common to all GPT versions """
@@ -41,14 +43,16 @@ class GPTConfig:
     def __init__(self, vocab_size, block_size, **kwargs):
         self.vocab_size = vocab_size
         self.block_size = block_size
-        for k,v in kwargs.items():
+        for k, v in kwargs.items():
             setattr(self, k, v)
+
 
 class GPT1Config(GPTConfig):
     """ GPT-1 like network roughly 125M params """
     n_layer = 12
     n_head = 12
     n_embd = 768
+
 
 class CausalSelfAttention(nn.Module):
     """
@@ -73,28 +77,29 @@ class CausalSelfAttention(nn.Module):
         # self.register_buffer("mask", torch.tril(torch.ones(config.block_size, config.block_size))
         #                              .view(1, 1, config.block_size, config.block_size))
         self.register_buffer("mask", torch.tril(torch.ones(config.block_size + 1, config.block_size + 1))
-                                     .view(1, 1, config.block_size + 1, config.block_size + 1))
+                             .view(1, 1, config.block_size + 1, config.block_size + 1))
         self.n_head = config.n_head
 
     def forward(self, x, layer_past=None):
         B, T, C = x.size()
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        k = self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        q = self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        v = self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        k = self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+        q = self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+        v = self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        att = att.masked_fill(self.mask[:,:,:T,:T] == 0, float('-inf'))
+        att = att.masked_fill(self.mask[:, :, :T, :T] == 0, float('-inf'))
         att = F.softmax(att, dim=-1)
         att = self.attn_drop(att)
-        y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
+        y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
 
         # output projection
         y = self.resid_drop(self.proj(y))
         return y
+
 
 class Block(nn.Module):
     """ an unassuming Transformer block """
@@ -116,6 +121,7 @@ class Block(nn.Module):
         x = x + self.mlp(self.ln2(x))
         return x
 
+
 class GPT(nn.Module):
     """  the full GPT language model, with a context size of block_size """
 
@@ -130,7 +136,7 @@ class GPT(nn.Module):
         self.tok_emb = nn.Embedding(config.vocab_size, config.n_embd)
         # self.pos_emb = nn.Parameter(torch.zeros(1, config.block_size, config.n_embd))
         self.pos_emb = nn.Parameter(torch.zeros(1, config.block_size + 1, config.n_embd))
-        self.global_pos_emb = nn.Parameter(torch.zeros(1, config.max_timestep+1, config.n_embd))
+        self.global_pos_emb = nn.Parameter(torch.zeros(1, config.max_timestep + 1, config.n_embd))
         self.drop = nn.Dropout(config.embd_pdrop)
 
         # transformer
@@ -142,18 +148,14 @@ class GPT(nn.Module):
         self.block_size = config.block_size
         self.apply(self._init_weights)
 
-
         logger.info("number of parameters: %e", sum(p.numel() for p in self.parameters()))
 
-
-        self.state_encoder = nn.Sequential(nn.Conv2d(4, 32, 8, stride=4, padding=0), nn.ReLU(),
-                                 nn.Conv2d(32, 64, 4, stride=2, padding=0), nn.ReLU(),
-                                 nn.Conv2d(64, 64, 3, stride=1, padding=0), nn.ReLU(),
-                                 nn.Flatten(), nn.Linear(3136, config.n_embd), nn.Tanh())
+        self.state_encoder = nn.Sequential(nn.Linear(1, config.n_embd), nn.Tanh())  # TODO could make state more complex
 
         self.ret_emb = nn.Sequential(nn.Linear(1, config.n_embd), nn.Tanh())
 
         self.action_embeddings = nn.Sequential(nn.Embedding(config.vocab_size, config.n_embd), nn.Tanh())
+
         nn.init.normal_(self.action_embeddings[0].weight, mean=0.0, std=0.02)
 
     def get_block_size(self):
@@ -179,12 +181,11 @@ class GPT(nn.Module):
         # separate out all parameters to those that will and won't experience regularizing weight decay
         decay = set()
         no_decay = set()
-        # whitelist_weight_modules = (torch.nn.Linear, )
-        whitelist_weight_modules = (torch.nn.Linear, torch.nn.Conv2d)
+        whitelist_weight_modules = (torch.nn.Linear,)
         blacklist_weight_modules = (torch.nn.LayerNorm, torch.nn.Embedding)
         for mn, m in self.named_modules():
             for pn, p in m.named_parameters():
-                fpn = '%s.%s' % (mn, pn) if mn else pn # full param name
+                fpn = '%s.%s' % (mn, pn) if mn else pn  # full param name
 
                 if pn.endswith('bias'):
                     # all biases will not be decayed
@@ -204,9 +205,10 @@ class GPT(nn.Module):
         param_dict = {pn: p for pn, p in self.named_parameters()}
         inter_params = decay & no_decay
         union_params = decay | no_decay
-        assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params), )
-        assert len(param_dict.keys() - union_params) == 0, "parameters %s were not separated into either decay/no_decay set!" \
-                                                    % (str(param_dict.keys() - union_params), )
+        assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
+        assert len(
+            param_dict.keys() - union_params) == 0, "parameters %s were not separated into either decay/no_decay set!" \
+                                                    % (str(param_dict.keys() - union_params),)
 
         # create the pytorch optimizer object
         optim_groups = [
@@ -218,44 +220,55 @@ class GPT(nn.Module):
 
     # state, action, and return
     def forward(self, states, actions, targets=None, rtgs=None, timesteps=None):
-        # states: (batch, block_size, 4*84*84)
+        # states: (batch, block_size, 1), used to be 4*84*84 for atari screen data
         # actions: (batch, block_size, 1)
         # targets: (batch, block_size, 1)
         # rtgs: (batch, block_size, 1)
         # timesteps: (batch, 1, 1)
 
-        state_embeddings = self.state_encoder(states.reshape(-1, 4, 84, 84).type(torch.float32).contiguous()) # (batch * block_size, n_embd)
-        state_embeddings = state_embeddings.reshape(states.shape[0], states.shape[1], self.config.n_embd) # (batch, block_size, n_embd)
+        state_embeddings = self.state_encoder(states.type(torch.float32).contiguous())  # (batch, n_embd)
 
         if actions is not None and self.model_type == 'reward_conditioned':
             rtg_embeddings = self.ret_emb(rtgs.type(torch.float32))
-            action_embeddings = self.action_embeddings(actions.type(torch.long).squeeze(-1)) # (batch, block_size, n_embd)
+            action_embeddings = self.action_embeddings(
+                actions.type(torch.long).squeeze(-1))  # (batch, block_size, n_embd)
 
-            token_embeddings = torch.zeros((states.shape[0], states.shape[1]*3 - int(targets is None), self.config.n_embd), dtype=torch.float32, device=state_embeddings.device)
-            token_embeddings[:,::3,:] = rtg_embeddings
-            token_embeddings[:,1::3,:] = state_embeddings
-            token_embeddings[:,2::3,:] = action_embeddings[:,-states.shape[1] + int(targets is None):,:]
-        elif actions is None and self.model_type == 'reward_conditioned': # only happens at very first timestep of evaluation
+            token_embeddings = torch.zeros(
+                (states.shape[0], states.shape[1] * 3 - int(targets is None), self.config.n_embd), dtype=torch.float32,
+                device=state_embeddings.device)
+            token_embeddings[:, ::3, :] = rtg_embeddings
+            token_embeddings[:, 1::3, :] = state_embeddings
+            token_embeddings[:, 2::3, :] = action_embeddings[:, -states.shape[1] + int(targets is None):, :]
+        elif actions is None and self.model_type == 'reward_conditioned':  # only happens at very first timestep of evaluation
             rtg_embeddings = self.ret_emb(rtgs.type(torch.float32))
 
-            token_embeddings = torch.zeros((states.shape[0], states.shape[1]*2, self.config.n_embd), dtype=torch.float32, device=state_embeddings.device)
-            token_embeddings[:,::2,:] = rtg_embeddings # really just [:,0,:]
-            token_embeddings[:,1::2,:] = state_embeddings # really just [:,1,:]
+            token_embeddings = torch.zeros((states.shape[0], states.shape[1] * 2, self.config.n_embd),
+                                           dtype=torch.float32, device=state_embeddings.device)
+            token_embeddings[:, ::2, :] = rtg_embeddings  # really just [:,0,:]
+            token_embeddings[:, 1::2, :] = state_embeddings  # really just [:,1,:]
         elif actions is not None and self.model_type == 'naive':
-            action_embeddings = self.action_embeddings(actions.type(torch.long).squeeze(-1)) # (batch, block_size, n_embd)
+            action_embeddings = self.action_embeddings(
+                actions.type(torch.long).squeeze(-1))  # (batch, block_size, n_embd)
 
-            token_embeddings = torch.zeros((states.shape[0], states.shape[1]*2 - int(targets is None), self.config.n_embd), dtype=torch.float32, device=state_embeddings.device)
-            token_embeddings[:,::2,:] = state_embeddings
-            token_embeddings[:,1::2,:] = action_embeddings[:,-states.shape[1] + int(targets is None):,:]
-        elif actions is None and self.model_type == 'naive': # only happens at very first timestep of evaluation
+            token_embeddings = torch.zeros(
+                (states.shape[0], states.shape[1] * 2 - int(targets is None), self.config.n_embd), dtype=torch.float32,
+                device=state_embeddings.device)
+            token_embeddings[:, ::2, :] = state_embeddings
+            token_embeddings[:, 1::2, :] = action_embeddings[:, -states.shape[1] + int(targets is None):, :]
+        elif actions is None and self.model_type == 'naive':  # only happens at very first timestep of evaluation
             token_embeddings = state_embeddings
         else:
             raise NotImplementedError()
 
         batch_size = states.shape[0]
-        all_global_pos_emb = torch.repeat_interleave(self.global_pos_emb, batch_size, dim=0) # batch_size, traj_length, n_embd
+        all_global_pos_emb = torch.repeat_interleave(self.global_pos_emb, batch_size,
+                                                     dim=0)  # batch_size, traj_length, n_embd
 
-        position_embeddings = torch.gather(all_global_pos_emb, 1, torch.repeat_interleave(timesteps, self.config.n_embd, dim=-1)) + self.pos_emb[:, :token_embeddings.shape[1], :]
+        position_embeddings = torch.gather(all_global_pos_emb, 1, torch.repeat_interleave(timesteps, self.config.n_embd,
+                                                                                          dim=-1)) + self.pos_emb[:, :
+                                                                                                                     token_embeddings.shape[
+                                                                                                                         1],
+                                                                                                     :]
 
         x = self.drop(token_embeddings + position_embeddings)
         x = self.blocks(x)
@@ -263,17 +276,20 @@ class GPT(nn.Module):
         logits = self.head(x)
 
         if actions is not None and self.model_type == 'reward_conditioned':
-            logits = logits[:, 1::3, :] # only keep predictions from state_embeddings
+            logits = logits[:, 1::3, :]  # only keep predictions from state_embeddings
         elif actions is None and self.model_type == 'reward_conditioned':
             logits = logits[:, 1:, :]
         elif actions is not None and self.model_type == 'naive':
-            logits = logits[:, ::2, :] # only keep predictions from state_embeddings
+            logits = logits[:, ::2, :]  # only keep predictions from state_embeddings
         elif actions is None and self.model_type == 'naive':
-            logits = logits # for completeness
+            logits = logits  # for completeness
         else:
             raise NotImplementedError()
 
-        # if we are given some desired targets also calculate the loss
+        # here we calculate cross entropy loss
+        # logits are unnormalised scores for all possible next 'words' or actions
+        # targets is actual next 'word' or action
+        # cross entropy loss will be low if actual next word was given strong prediction
         loss = None
         if targets is not None:
             loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))

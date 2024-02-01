@@ -18,14 +18,21 @@ import logging
 
 from tqdm import tqdm
 import numpy as np
+
+import torch
+import torch.optim as optim
+from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data.dataloader import DataLoader
 
 logger = logging.getLogger(__name__)
 
 from mingpt.utils import sample
+import atari_py
 from collections import deque
 import random
+import cv2
 import torch
+from PIL import Image
 
 
 class TrainerConfig:
@@ -51,11 +58,10 @@ class TrainerConfig:
 
 class Trainer:
 
-    def __init__(self, model, train_dataset, test_dataset, eval_dataset, config):
+    def __init__(self, model, train_dataset, test_dataset, config):
         self.model = model
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
-        self.eval_dataset = eval_dataset
         self.config = config
 
         # take over whatever gpus are on the system
@@ -68,7 +74,7 @@ class Trainer:
         # DataParallel wrappers keep raw model object in .module attribute
         raw_model = self.model.module if hasattr(self.model, "module") else self.model
         logger.info("saving %s", self.config.ckpt_path)
-        torch.save(raw_model.state_dict(), self.config.ckpt_path)
+        # torch.save(raw_model.state_dict(), self.config.ckpt_path)
 
     def train(self):
         model, config = self.model, self.config
@@ -85,8 +91,6 @@ class Trainer:
 
             losses = []
             pbar = tqdm(enumerate(loader), total=len(loader)) if is_train else enumerate(loader)
-
-            # for each __getitem__ of dataloader, we know state and want to predict action
             for it, (x, y, r, t) in pbar:
 
                 # place data on the correct device
@@ -144,64 +148,181 @@ class Trainer:
         for epoch in range(config.max_epochs):
 
             run_epoch('train', epoch_num=epoch)
-            if self.test_dataset is not None:
-                test_loss = run_epoch('test')
+            # if self.test_dataset is not None:
+            #     test_loss = run_epoch('test')
 
-            # supports early stopping based on the test loss, or just save always if no test set is provided
-            good_model = self.test_dataset is None or test_loss < best_loss
-            if self.config.ckpt_path is not None and good_model:
-                best_loss = test_loss
-                self.save_checkpoint()
+            # # supports early stopping based on the test loss, or just save always if no test set is provided
+            # good_model = self.test_dataset is None or test_loss < best_loss
+            # if self.config.ckpt_path is not None and good_model:
+            #     best_loss = test_loss
+            #     self.save_checkpoint()
 
+            # -- pass in target returns
             if self.config.model_type == 'naive':
                 eval_return = self.get_returns(0)
             elif self.config.model_type == 'reward_conditioned':
-                eval_return = self.get_returns(50)
+                if self.config.game == 'Breakout':
+                    eval_return = self.get_returns(90)
+                elif self.config.game == 'Seaquest':
+                    eval_return = self.get_returns(1150)
+                elif self.config.game == 'Qbert':
+                    eval_return = self.get_returns(14000)
+                elif self.config.game == 'Pong':
+                    eval_return = self.get_returns(20)
+                else:
+                    raise NotImplementedError()
             else:
                 raise NotImplementedError()
 
     def get_returns(self, ret):
-
         self.model.train(False)
-        total_rewards = []
+        args = Args(self.config.game.lower(), self.config.seed)
+        env = Env(args)
+        env.eval()
 
-        # Get 10 unique users
-        user_ids = random.sample(range(1, (64 * 4) + 1), 10)
-
-        for user_id in user_ids:
-
-            # Get simple np arrays of a random user's trajectories
-            states, actions, rewards, returns_to_go = self.eval_dataset[user_id]
+        T_rewards, T_Qs = [], []
+        done = True
+        for i in range(10):
+            state = env.reset()
+            state = state.type(torch.float32).to(self.device).unsqueeze(0).unsqueeze(0)
             rtgs = [ret]
-            reward_sum = 0
+            # first state is from env, first rtg is target return, and first timestep is 0
+            sampled_action = sample(self.model.module, state, 1, temperature=1.0, sample=True, actions=None,
+                                    rtgs=torch.tensor(rtgs, dtype=torch.long).to(self.device).unsqueeze(0).unsqueeze(
+                                        -1),
+                                    timesteps=torch.zeros((1, 1, 1), dtype=torch.int64).to(self.device))
 
-            for i in range(10):
-                state = states[i]  # shape (b, t)
-                state = state.unsqueeze(0).unsqueeze(0).to(self.device)
-                all_states = state if i == 0 else torch.cat([all_states, state], dim=0)
-
-                sampled_action = sample(self.model.module, all_states.unsqueeze(0), 1, temperature=1.0, sample=True,
-                            actions=torch.tensor(actions, dtype=torch.long).to(self.device).unsqueeze(
-                                1).unsqueeze(0),
-                            rtgs=torch.tensor(rtgs, dtype=torch.long).to(self.device).unsqueeze(
-                                0).unsqueeze(-1),
-                            timesteps=(min(i, self.config.max_timestep) * torch.ones((1, 1, 1),
-                                                                                     dtype=torch.int64).to(
-                                self.device)))
-
-                # Find the reward corresponding to the generated action from our eval dataset
+            j = 0
+            all_states = state
+            actions = []
+            while True:
+                if done:
+                    state, reward_sum, done = env.reset(), 0, False
                 action = sampled_action.cpu().numpy()[0, -1]
-                action_index = np.where(actions == action)
-                reward = rewards[action_index]
-                reward_sum += reward
                 actions += [sampled_action]
+                state, reward, done = env.step(action)
+                reward_sum += reward
+                j += 1
+
+                if done:
+                    T_rewards.append(reward_sum)
+                    break
+
+                state = state.unsqueeze(0).unsqueeze(0).to(self.device)
+
+                all_states = torch.cat([all_states, state], dim=0)
+
                 rtgs += [rtgs[-1] - reward]
-
-            total_rewards.append(reward_sum)
-            print(f"Recommended 10 new items to the user of id \"{user_id}\", wanted an accumulative score of {ret}, "
-                  f"got {reward_sum}.")
-
-        eval_return = sum(total_rewards) / 10.
-        print("Average target returns desired over 10 user episodes: %d, Actual return: %d" % (ret, eval_return))
+                # all_states has all previous states and rtgs has all previous rtgs (will be cut to block_size in utils.sample)
+                # timestep is just current timestep
+                sampled_action = sample(self.model.module, all_states.unsqueeze(0), 1, temperature=1.0, sample=True,
+                                        actions=torch.tensor(actions, dtype=torch.long).to(self.device).unsqueeze(
+                                            1).unsqueeze(0),
+                                        rtgs=torch.tensor(rtgs, dtype=torch.long).to(self.device).unsqueeze(
+                                            0).unsqueeze(-1),
+                                        timesteps=(min(j, self.config.max_timestep) * torch.ones((1, 1, 1),
+                                                                                                 dtype=torch.int64).to(
+                                            self.device)))
+        env.close()
+        eval_return = sum(T_rewards) / 10.
+        print("target return: %d, eval return: %d" % (ret, eval_return))
         self.model.train(True)
         return eval_return
+
+
+class Env():
+    def __init__(self, args):
+        self.device = args.device
+        self.ale = atari_py.ALEInterface()
+        self.ale.setInt('random_seed', args.seed)
+        self.ale.setInt('max_num_frames_per_episode', args.max_episode_length)
+        self.ale.setFloat('repeat_action_probability', 0)  # Disable sticky actions
+        self.ale.setInt('frame_skip', 0)
+        self.ale.setBool('color_averaging', False)
+        self.ale.loadROM(atari_py.get_game_path(args.game))  # ROM loading must be done after setting options
+        actions = self.ale.getMinimalActionSet()
+        self.actions = dict([i, e] for i, e in zip(range(len(actions)), actions))
+        self.lives = 0  # Life counter (used in DeepMind training)
+        self.life_termination = False  # Used to check if resetting only from loss of life
+        self.window = args.history_length  # Number of frames to concatenate
+        self.state_buffer = deque([], maxlen=args.history_length)
+        self.training = True  # Consistent with model training mode
+
+    def _get_state(self):
+        state = cv2.resize(self.ale.getScreenGrayscale(), (84, 84), interpolation=cv2.INTER_LINEAR)
+        return torch.tensor(state, dtype=torch.float32, device=self.device).div_(255)
+
+    def _reset_buffer(self):
+        for _ in range(self.window):
+            self.state_buffer.append(torch.zeros(84, 84, device=self.device))
+
+    def reset(self):
+        if self.life_termination:
+            self.life_termination = False  # Reset flag
+            self.ale.act(0)  # Use a no-op after loss of life
+        else:
+            # Reset internals
+            self._reset_buffer()
+            self.ale.reset_game()
+            # Perform up to 30 random no-ops before starting
+            for _ in range(random.randrange(30)):
+                self.ale.act(0)  # Assumes raw action 0 is always no-op
+                if self.ale.game_over():
+                    self.ale.reset_game()
+        # Process and return "initial" state
+        observation = self._get_state()
+        self.state_buffer.append(observation)
+        self.lives = self.ale.lives()
+        return torch.stack(list(self.state_buffer), 0)
+
+    def step(self, action):
+        # Repeat action 4 times, max pool over last 2 frames
+        frame_buffer = torch.zeros(2, 84, 84, device=self.device)
+        reward, done = 0, False
+        for t in range(4):
+            reward += self.ale.act(self.actions.get(action))
+            if t == 2:
+                frame_buffer[0] = self._get_state()
+            elif t == 3:
+                frame_buffer[1] = self._get_state()
+            done = self.ale.game_over()
+            if done:
+                break
+        observation = frame_buffer.max(0)[0]
+        self.state_buffer.append(observation)
+        # Detect loss of life as terminal in training mode
+        if self.training:
+            lives = self.ale.lives()
+            if lives < self.lives and lives > 0:  # Lives > 0 for Q*bert
+                self.life_termination = not done  # Only set flag when not truly done
+                done = True
+            self.lives = lives
+        # Return state, reward, done
+        return torch.stack(list(self.state_buffer), 0), reward, done
+
+    # Uses loss of life as terminal signal
+    def train(self):
+        self.training = True
+
+    # Uses standard terminal signal
+    def eval(self):
+        self.training = False
+
+    def action_space(self):
+        return len(self.actions)
+
+    def render(self):
+        cv2.imshow('screen', self.ale.getScreenRGB()[:, :, ::-1])
+        cv2.waitKey(1)
+
+    def close(self):
+        cv2.destroyAllWindows()
+
+
+class Args:
+    def __init__(self, game, seed):
+        self.device = torch.device('cuda')
+        self.seed = seed
+        self.max_episode_length = 108e3
+        self.game = game
+        self.history_length = 4

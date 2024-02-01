@@ -114,8 +114,8 @@ states, actions, returns, terminal_indices, returns_to_go, timesteps = create_sy
 test_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, timesteps)
 
 # Evaluate with Complete Matrix
-states, actions, returns, terminal_indices, returns_to_go, timesteps = create_synthetic_review_dataset(min_ratings_per_user=273,max_ratings_per_user=273)
-eval_dataset = EvaluationDataset(states, actions, returns, returns_to_go, terminal_indices, timesteps)
+# states, actions, returns, terminal_indices, returns_to_go, timesteps = create_synthetic_review_dataset(min_ratings_per_user=273,max_ratings_per_user=273)
+# eval_dataset = EvaluationDataset(states, actions, returns, returns_to_go, terminal_indices, timesteps)
 
 mconf = GPTConfig(train_dataset.vocab_size, train_dataset.block_size,
                   n_layer=6, n_head=8, n_embd=128, model_type=args.model_type, max_timestep=max(timesteps))
@@ -129,6 +129,6 @@ tconf = TrainerConfig(max_epochs=epochs, batch_size=args.batch_size, learning_ra
                       num_workers=4, seed=args.seed, model_type=args.model_type,
                       ckpt_path="checkpoints/model_checkpoint.pth",
                       max_timestep=max(timesteps))
-trainer = Trainer(model, train_dataset, test_dataset, eval_dataset, tconf)
+trainer = Trainer(model, train_dataset, test_dataset, None, tconf)
 
 trainer.train()
