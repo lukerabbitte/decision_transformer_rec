@@ -145,12 +145,10 @@ class GPT(nn.Module):
 
         logger.info("number of parameters: %e", sum(p.numel() for p in self.parameters()))
 
-        self.state_encoder = nn.Sequential(nn.Linear(1, config.n_embd), nn.Tanh())
+        self.state_encoder = nn.Sequential(nn.Linear(1, config.n_embd), nn.Tanh()) # TODO could make state more complex
 
         self.ret_emb = nn.Sequential(nn.Linear(1, config.n_embd), nn.Tanh())
 
-        # TODO vocab size was 3+1, because there are 3 actions in atari dataset. What should it be in ours?
-        # TODO the only vocab size that makes sense is the number of movies to recommend?
         self.action_embeddings = nn.Sequential(nn.Embedding(config.vocab_size, config.n_embd), nn.Tanh())
 
         nn.init.normal_(self.action_embeddings[0].weight, mean=0.0, std=0.02)
@@ -216,7 +214,7 @@ class GPT(nn.Module):
 
     # state, action, and return
     def forward(self, states, actions, targets=None, rtgs=None, timesteps=None):
-        # states: (batch, block_size, 1), used to be 4*84*84
+        # states: (batch, block_size, 1), used to be 4*84*84 for atari screen data
         # actions: (batch, block_size, 1)
         # targets: (batch, block_size, 1)
         # rtgs: (batch, block_size, 1)
@@ -270,7 +268,10 @@ class GPT(nn.Module):
         else:
             raise NotImplementedError()
 
-        # if we are given some desired targets also calculate the loss
+        # here we calculate cross entropy loss
+        # logits are unnormalised scores for all possible next 'words' or actions
+        # targets is actual next 'word' or action
+        # cross entropy loss will be low if actual next word was given strong prediction
         loss = None
         if targets is not None:
             loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
