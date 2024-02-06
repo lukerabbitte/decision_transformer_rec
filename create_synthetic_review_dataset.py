@@ -6,7 +6,7 @@ import os
 
 
 def create_synthetic_review_dataset(mu_file="goodreads/mu_goodreads4.csv", sigma_file="goodreads/sigma_goodreads4.csv",
-                                    users_per_group=64, min_ratings_per_user=2, max_ratings_per_user=273):
+                                    users_per_group=64, min_ratings_per_user=20, max_ratings_per_user=273):
     """
     Create a synthetic review dataset based on mean and standard deviation files.
 
@@ -66,7 +66,7 @@ def create_synthetic_review_dataset(mu_file="goodreads/mu_goodreads4.csv", sigma
             terminal_indices.append(terminal_index)
             user_id += 1
 
-    base_filename = 'goodreads/goodreads_data.tsv'
+    base_filename = 'goodreads/goodreads_train_data.tsv'
     if os.path.exists(base_filename):
         suffix = 1
         while os.path.exists(f"{base_filename}_{suffix}.tsv"):

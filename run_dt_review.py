@@ -1,37 +1,22 @@
 import logging
 
-from create_synthetic_review_dataset import create_synthetic_review_dataset
+from load_data import load_data
 from mingpt.utils import set_seed
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from mingpt.model_atari import GPT, GPTConfig
-from mingpt.trainer_atari import Trainer, TrainerConfig
+from mingpt.model_review import GPT, GPTConfig
+from mingpt.trainer_review import Trainer, TrainerConfig
 import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=123) # needed for mingpt
 parser.add_argument('--context_length', type=int, default=30)  # the number of tokens in context
-parser.add_argument('--epochs', type=int, default=5)  # was 5
+parser.add_argument('--epochs', type=int, default=30)
 parser.add_argument('--model_type', type=str, default='reward_conditioned')
-parser.add_argument('--num_steps', type=int, default=500000)  # was 500000
+parser.add_argument('--num_steps', type=int, default=500000)
 parser.add_argument('--batch_size', type=int, default=128)
 args = parser.parse_args()
-
-set_seed(args.seed)
-"""
-Perhaps the largest change so far is in how we consider actions.
-
-Originally, actions were move left, stay still, move right. 3 options. The vocab size was max(actions)+1.
-Now, an action is an item ID.
-Does it make sense to keep our vocab size as max(actions)+1, where this means the vocab size is the no. of movies?
-
-State is simply the user ID.
-Reward is the rating the user gives.
-
-Other recommender-specific RL papers consider a state that includes some history,
-and which implement a far more complicated reward function. Will not do this for now.
-"""
 
 
 class ReviewDataset(Dataset):
@@ -88,7 +73,7 @@ class EvaluationDataset(Dataset):
     def __getitem__(self, user_id):
 
         idx = self.user_indices[user_id - 1] # start of user trajectory
-        done_idx = self.terminal_indices[idx - 1] # end of user trajectory (upper bound)
+        done_idx = self.terminal_indices[user_id - 1] # end of user trajectory
 
         # Return tensors of (episode_length, 1)
         states = torch.tensor(np.array(self.states[idx:done_idx]), dtype=torch.float32).unsqueeze(1)
@@ -106,16 +91,11 @@ logging.basicConfig(
 )
 
 # Train
-states, actions, returns, terminal_indices, returns_to_go, timesteps = create_synthetic_review_dataset()
+states, actions, returns, terminal_indices, returns_to_go, timesteps = load_data("/home/luke/code/decision_transformer_rec/goodreads/goodreads_train_data.tsv")
 train_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, timesteps)
 
-# Test
-states, actions, returns, terminal_indices, returns_to_go, timesteps = create_synthetic_review_dataset()
-test_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, timesteps)
-
-# Evaluate with Complete Matrix
-# states, actions, returns, terminal_indices, returns_to_go, timesteps = create_synthetic_review_dataset(min_ratings_per_user=273,max_ratings_per_user=273)
-# eval_dataset = EvaluationDataset(states, actions, returns, returns_to_go, terminal_indices, timesteps)
+states, actions, returns, terminal_indices, returns_to_go, timesteps = load_data("/home/luke/code/decision_transformer_rec/goodreads/goodreads_eval_data.tsv")
+eval_dataset = EvaluationDataset(states, actions, returns, returns_to_go, terminal_indices, timesteps)
 
 mconf = GPTConfig(train_dataset.vocab_size, train_dataset.block_size,
                   n_layer=6, n_head=8, n_embd=128, model_type=args.model_type, max_timestep=max(timesteps))
@@ -129,6 +109,6 @@ tconf = TrainerConfig(max_epochs=epochs, batch_size=args.batch_size, learning_ra
                       num_workers=4, seed=args.seed, model_type=args.model_type,
                       ckpt_path="checkpoints/model_checkpoint.pth",
                       max_timestep=max(timesteps))
-trainer = Trainer(model, train_dataset, test_dataset, None, tconf)
+trainer = Trainer(model, train_dataset, None, eval_dataset, tconf)
 
 trainer.train()

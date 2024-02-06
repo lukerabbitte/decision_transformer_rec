@@ -26,6 +26,7 @@ from mingpt.utils import sample
 from collections import deque
 import random
 import torch
+import pandas as pd
 
 
 class TrainerConfig:
@@ -97,7 +98,6 @@ class Trainer:
 
                 # forward the model
                 with torch.set_grad_enabled(is_train):
-                    # logits, loss = model(x, y, r)
                     logits, loss = model(x, y, y, r, t)
                     loss = loss.mean()  # collapse all losses if they are scattered on multiple gpus
                     losses.append(loss.item())
@@ -142,68 +142,95 @@ class Trainer:
         self.tokens = 0  # counter used for learning rate decay
 
         for epoch in range(config.max_epochs):
-
             run_epoch('train', epoch_num=epoch)
-            if self.test_dataset is not None:
-                test_loss = run_epoch('test')
+            # if self.test_dataset is not None:
+            #     test_loss = run_epoch('test')
 
-            # supports early stopping based on the test loss, or just save always if no test set is provided
-            good_model = self.test_dataset is None or test_loss < best_loss
-            if self.config.ckpt_path is not None and good_model:
-                best_loss = test_loss
-                self.save_checkpoint()
+            # # supports early stopping based on the test loss, or just save always if no test set is provided
+            # good_model = self.test_dataset is None or test_loss < best_loss
+            # if self.config.ckpt_path is not None and good_model:
+            #     best_loss = test_loss
+            #     self.save_checkpoint()
 
-            """
-            if self.config.model_type == 'naive':
-                eval_return = self.get_returns(0)
-            elif self.config.model_type == 'reward_conditioned':
-                eval_return = self.get_returns(50)
-            else:
-                raise NotImplementedError()
-            """
+            self.get_returns(50)  # ideal return for one 10-recommendation sequence of recommendations
 
+    def get_returns(self, ret):
+        print("Getting returns...\n")
+        self.model.train(False)
+        states, actions, rewards, returns_to_go = self.eval_dataset[23]
+
+        state = states[0]  # shape (b, t)
+        state = state.unsqueeze(0).unsqueeze(0).to(self.device)
+        rtgs = [ret]
+
+        # Handle initial case where state is just one state and actions are none
+        sampled_action = sample(self.model.module, state, 1, temperature=1.0, sample=True,
+                                actions=None,
+                                rtgs=torch.tensor(rtgs, dtype=torch.long).to(self.device).unsqueeze(
+                                    0).unsqueeze(-1),
+                                timesteps=(torch.ones((1, 1, 1),
+                                                                                         dtype=torch.int64).to(
+                                    self.device)))
+
+        # Find the reward corresponding to the generated action from our eval dataset
+        action = sampled_action.cpu().numpy()[0, -1]
+        print(f"Action was {action}")
+        action_index = np.where(actions == action)
+        # reward = rewards[action_index]  # rewards is a simple numpy array so no reshaping needed
+        # actions += [sampled_action]
+        # rtgs += [rtgs[-1] - reward]
+
+        # print(f"Action taken was {action} and reward was {reward}")
+
+    """
     def get_returns(self, ret):
 
         self.model.train(False)
-        total_rewards = []
 
         # Get 10 unique users
         user_ids = random.sample(range(1, (64 * 4) + 1), 10)
+
+        # Will contain all the total rewards per user episode
+        total_rewards = []
 
         for user_id in user_ids:
 
             # Get simple np arrays of a random user's trajectories
             states, actions, rewards, returns_to_go = self.eval_dataset[user_id]
-            rtgs = [ret]
+            rtgs = 50  # perfect cumulative recommendation score over 10 runs
             reward_sum = 0
 
             for i in range(10):
+                # State is simply userID at the moment, so we can start at any arbitrary point
                 state = states[i]  # shape (b, t)
                 state = state.unsqueeze(0).unsqueeze(0).to(self.device)
                 all_states = state if i == 0 else torch.cat([all_states, state], dim=0)
 
+                # Handle initial case where state is just one state and actions are none
                 sampled_action = sample(self.model.module, all_states.unsqueeze(0), 1, temperature=1.0, sample=True,
-                            actions=torch.tensor(actions, dtype=torch.long).to(self.device).unsqueeze(
-                                1).unsqueeze(0),
-                            rtgs=torch.tensor(rtgs, dtype=torch.long).to(self.device).unsqueeze(
-                                0).unsqueeze(-1),
-                            timesteps=(min(i, self.config.max_timestep) * torch.ones((1, 1, 1),
-                                                                                     dtype=torch.int64).to(
-                                self.device)))
+                                        actions=None if i == 0 else torch.tensor(actions, dtype=torch.long).to(
+                                            self.device).unsqueeze(
+                                            1).unsqueeze(0),
+                                        rtgs=torch.tensor(rtgs, dtype=torch.long).to(self.device).unsqueeze(
+                                            0).unsqueeze(-1),
+                                        timesteps=(min(i, self.config.max_timestep) * torch.ones((1, 1, 1),
+                                                                                                 dtype=torch.int64).to(
+                                            self.device)))
 
                 # Find the reward corresponding to the generated action from our eval dataset
                 action = sampled_action.cpu().numpy()[0, -1]
                 action_index = np.where(actions == action)
-                reward = rewards[action_index]
+                reward = rewards[action_index] # rewards is a simple numpy array so no reshaping needed
                 reward_sum += reward
                 actions += [sampled_action]
                 rtgs += [rtgs[-1] - reward]
 
             total_rewards.append(reward_sum)
-            print(f"Recommended 10 new items to the user of id \"{user_id}\", wanted an accumulative score of {ret}, "
+            print(f"Recommended 10 new items to the user of id \"{user_id}\", wanted an accumulative total of {ret}, "
                   f"got {reward_sum}.")
 
         eval_return = sum(total_rewards) / 10.
-        print("Average target returns desired over 10 user episodes: %d, Actual return: %d" % (ret, eval_return))
+        print("Desired average return across ten 10-recommendation sequences: %d, Actual average return: %d" % (ret, eval_return))
         self.model.train(True)
         return eval_return
+    """

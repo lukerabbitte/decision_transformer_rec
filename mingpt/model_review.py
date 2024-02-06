@@ -26,8 +26,6 @@ from torch.nn import functional as F
 
 logger = logging.getLogger(__name__)
 
-import numpy as np
-
 
 class GELU(nn.Module):
     def forward(self, input):
@@ -220,13 +218,14 @@ class GPT(nn.Module):
 
     # state, action, and return
     def forward(self, states, actions, targets=None, rtgs=None, timesteps=None):
-        # states: (batch, block_size, 1), used to be 4*84*84 for atari screen data
+        # states: (batch, block_size, 1), used to be (batch, block_size, 4*84*84) for atari screen data
         # actions: (batch, block_size, 1)
         # targets: (batch, block_size, 1)
         # rtgs: (batch, block_size, 1)
         # timesteps: (batch, 1, 1)
 
         state_embeddings = self.state_encoder(states.type(torch.float32).contiguous())  # (batch, n_embd)
+        state_embeddings = state_embeddings.reshape(states.shape[0], states.shape[1], self.config.n_embd)
 
         if actions is not None and self.model_type == 'reward_conditioned':
             rtg_embeddings = self.ret_emb(rtgs.type(torch.float32))
