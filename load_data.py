@@ -14,12 +14,11 @@ def get_terminal_indices(arr):
 
 
 def load_data(filepath):
-    num_items = 273
-    groups = 4
 
     data = pd.read_csv(filepath, delimiter="\t")
 
     states = np.array(data.iloc[:, 0])
+    print(f"states from load_data is {states.size}")
     actions = np.array(data.iloc[:, 1])
     returns = np.array(data.iloc[:, 2])
     timesteps = np.array(data.iloc[:, 3])
