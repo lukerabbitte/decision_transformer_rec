@@ -105,11 +105,11 @@ class Trainer:
                 x, y, r, t = batch
                 # for state in x:
                     # print(f"state = \n{state}\n")
-                print("States:", len(x))
-                print(f"at train point states is a tensor: {torch.is_tensor(x)}")
-                print("Actions:", len(y))
-                print("Returns:", len(r))
-                print("Timesteps", len(t))
+                print("States:", x)
+                # print(f"at train point states is a tensor: {torch.is_tensor(x)}")
+                print("Actions:", y)
+                print("Returns:", r)
+                print("Timesteps", t)
                 print("\n\n\n----------\n\n\n")
                 break  # Print only the first sample for debugging purposes
 
