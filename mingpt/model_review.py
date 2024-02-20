@@ -149,10 +149,13 @@ class GPT(nn.Module):
         logger.info("number of parameters: %e", sum(p.numel() for p in self.parameters()))
 
         self.state_encoder = nn.Sequential(nn.Linear(1, config.n_embd), nn.Tanh())  # TODO could make state more complex
+        print(f"self.state_encoder:\n{self.state_encoder}\n")
 
         self.ret_emb = nn.Sequential(nn.Linear(1, config.n_embd), nn.Tanh())
+        print(f"self.ret_emb:\n{self.ret_emb}\n")
 
         self.action_embeddings = nn.Sequential(nn.Embedding(config.vocab_size, config.n_embd), nn.Tanh())
+        print(f"self.action_embeddings:\n{self.action_embeddings}\n")
 
         nn.init.normal_(self.action_embeddings[0].weight, mean=0.0, std=0.02)
 
@@ -232,6 +235,9 @@ class GPT(nn.Module):
             action_embeddings = self.action_embeddings(
                 actions.type(torch.long).squeeze(-1))  # (batch, block_size, n_embd)
 
+            print(f"rtg_embeddings: {rtg_embeddings}")
+            print(f"action_embeddings: {action_embeddings}")
+
             token_embeddings = torch.zeros(
                 (states.shape[0], states.shape[1] * 3 - int(targets is None), self.config.n_embd), dtype=torch.float32,
                 device=state_embeddings.device)
@@ -290,6 +296,7 @@ class GPT(nn.Module):
         # targets is actual next 'word' or action
         # cross entropy loss will be low if actual next word was given strong prediction
         loss = None
+        print(f"targets size from model is {targets.size()}")
         if targets is not None:
             loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
 

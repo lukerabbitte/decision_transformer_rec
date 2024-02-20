@@ -85,10 +85,10 @@ class Trainer:
         def collate_fn(batch):
             # Where our batch is a list of (x, y, r, t) tuples
             x_batch, y_batch, r_batch, t_batch = zip(*batch)
-            # x_batch = pad_sequence(x_batch, batch_first=True) # sequences of varying length are padded
-            # y_batch = pad_sequence(y_batch, batch_first=True)
-            # r_batch = pad_sequence(r_batch, batch_first=True)
-            # t_batch = pad_sequence(t_batch, batch_first=True)
+            x_batch = pad_sequence(x_batch, batch_first=True) # sequences of varying length are padded
+            y_batch = pad_sequence(y_batch, batch_first=True)
+            r_batch = pad_sequence(r_batch, batch_first=True)
+            t_batch = pad_sequence(t_batch, batch_first=True)
 
             return x_batch, y_batch, r_batch, t_batch
 
@@ -98,10 +98,7 @@ class Trainer:
             data = self.train_dataset if is_train else self.test_dataset
             loader = DataLoader(data, shuffle=True, pin_memory=True,
                                 batch_size=config.batch_size,
-                                num_workers=config.num_workers,
-                                collate_fn=collate_fn)
-
-
+                                num_workers=config.num_workers)
 
             # Iterate over the DataLoader and print a sample element
             for batch in loader:
@@ -109,6 +106,7 @@ class Trainer:
                 # for state in x:
                     # print(f"state = \n{state}\n")
                 print("States:", len(x))
+                print(f"at train point states is a tensor: {torch.is_tensor(x)}")
                 print("Actions:", len(y))
                 print("Returns:", len(r))
                 print("Timesteps", len(t))
@@ -232,8 +230,8 @@ class Trainer:
 
                 # Find the reward corresponding to the generated action from our eval dataset
                 action = sampled_action.cpu().numpy()[0, -1]
-                # action += 1  # action straight from model is 0-indexed, we want 1-indexed
-                # print(f"Action for user {user_id} was {action}")
+                action += 1  # action straight from model is 0-indexed, we want 1-indexed
+                print(f"Action for user {user_id} was {action}")
                 action_index = np.where(actions_user == action)[0][0]
                 reward = rewards_user[action_index] # rewards is a simple numpy array so no reshaping needed
                 # print(f"Reward for user {user_id} was {reward}")
