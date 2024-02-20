@@ -1,5 +1,4 @@
 import logging
-
 from load_data import load_data
 from mingpt.utils import set_seed
 import numpy as np
@@ -8,14 +7,15 @@ from torch.utils.data import Dataset
 from mingpt.model_review import GPT, GPTConfig
 from mingpt.trainer_review import Trainer, TrainerConfig
 import argparse
+import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--seed', type=int, default=123) # needed for mingpt
+parser.add_argument('--seed', type=int, default=123)  # needed for mingpt
 parser.add_argument('--context_length', type=int, default=30)  # the number of tokens in context
 parser.add_argument('--epochs', type=int, default=30)
 parser.add_argument('--model_type', type=str, default='reward_conditioned')
 parser.add_argument('--num_steps', type=int, default=500000)
-parser.add_argument('--batch_size', type=int, default=128)
+parser.add_argument('--batch_size', type=int, default=64)
 args = parser.parse_args()
 
 
@@ -23,11 +23,9 @@ class ReviewDataset(Dataset):
 
     def __init__(self, states, block_size, actions, terminal_indices, returns_to_go, timesteps):
         self.block_size = block_size
+        self.vocab_size = max(actions) + 1  # Vocab size is the space of items to recommend.
         self.states = states
-        self.vocab_size = max(actions) # Vocab size is the space of items to recommend
-        # print(f"Vocab size is {self.vocab_size}")
-        self.actions = actions - 1  # Model expects 0-indexed actions
-        # print(f"Max from actions array after shifting is {np.max(self.actions)}")
+        self.actions = actions
         self.terminal_indices = terminal_indices
         self.returns_to_go = returns_to_go
         self.timesteps = timesteps
@@ -43,13 +41,15 @@ class ReviewDataset(Dataset):
             if i > idx:  # find the first terminal index greater than idx
                 done_idx = min(i, done_idx)
                 break
-        idx = done_idx - block_size  # get data the size of context length (30) from index up to done index
+
+        idx = done_idx - block_size # get data the size of context length (30) from index up to done index
         states = torch.tensor(np.array(self.states[idx:done_idx]), dtype=torch.float32).unsqueeze(1)
         actions = torch.tensor(self.actions[idx:done_idx], dtype=torch.long).unsqueeze(1)  # (block_size, 1)
         returns_to_go = torch.tensor(self.returns_to_go[idx:done_idx], dtype=torch.float32).unsqueeze(1)
         timesteps = torch.tensor(self.timesteps[idx:idx + 1], dtype=torch.int64).unsqueeze(1)
 
         return states, actions, returns_to_go, timesteps
+
 
 class EvaluationDataset(Dataset):
 
@@ -68,14 +68,14 @@ class EvaluationDataset(Dataset):
     def __len__(self):
         return len(self.states)
 
-
     # Returns user data from a complete matrix of user interactions where they have rated every item, for eval purposes
     # Also note that each of our terminal indices will be one index higher than the last entry for a user.
     # This is in keeping with Python's upper bound exclusive behaviour.
     def __getitem__(self, user_id):
-
+        # print(f"user_id passed to EvaluationDataset getitem is: {user_id}")
         idx = self.start_indices[user_id - 1]
-        done_idx = None if user_id == self.start_indices.size else self.terminal_indices[user_id - 1]  # avoid array out of limit bug for last user
+        done_idx = None if user_id == self.start_indices.size else self.terminal_indices[
+            user_id - 1]  # avoid array out of limit bug for last user
 
         # Return tensors of (episode_length, 1)
         states = torch.tensor(np.array(self.states[idx:done_idx]), dtype=torch.float32).unsqueeze(1)
@@ -85,6 +85,7 @@ class EvaluationDataset(Dataset):
 
         return states, actions, returns, returns_to_go
 
+
 # Set up logging
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -93,10 +94,18 @@ logging.basicConfig(
 )
 
 # Train
-states, actions, returns, terminal_indices, returns_to_go, timesteps = load_data("/home/luke/code/decision_transformer_rec/goodreads/goodreads_train_data_25k_modified.tsv")
+states, actions, returns, terminal_indices, returns_to_go, timesteps = load_data(
+    "goodreads/goodreads_train_data_1024_users.tsv")
 train_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, timesteps)
 
-states, actions, returns, terminal_indices, returns_to_go, timesteps = load_data("/home/luke/code/decision_transformer_rec/goodreads/goodreads_eval_data_modified.tsv")
+# Test
+states, actions, returns, terminal_indices, returns_to_go, timesteps = load_data(
+    "goodreads/goodreads_test_data_1024_users.tsv")
+test_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, timesteps)
+
+# Eval
+states, actions, returns, terminal_indices, returns_to_go, timesteps = load_data(
+    "/home/luke/code/decision_transformer_rec/goodreads/goodreads_eval_data_1024_users.tsv")
 eval_dataset = EvaluationDataset(states, actions, returns, returns_to_go, terminal_indices, timesteps)
 
 mconf = GPTConfig(train_dataset.vocab_size, train_dataset.block_size,
@@ -111,6 +120,15 @@ tconf = TrainerConfig(max_epochs=epochs, batch_size=args.batch_size, learning_ra
                       num_workers=4, seed=args.seed, model_type=args.model_type,
                       ckpt_path="checkpoints/model_checkpoint.pth",
                       max_timestep=max(timesteps))
-trainer = Trainer(model, train_dataset, None, eval_dataset, tconf)
+trainer = Trainer(model, train_dataset, test_dataset, eval_dataset, tconf)
 
 trainer.train()
+
+plt.plot(trainer.train_losses, label='Train Loss')
+plt.plot(trainer.test_losses, label='Test Loss')
+plt.title('Loss Over Epochs')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend()
+plt.savefig('context_length_1.png')
+plt.show()

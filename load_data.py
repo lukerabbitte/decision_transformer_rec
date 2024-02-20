@@ -18,7 +18,7 @@ def load_data(filepath):
     data = pd.read_csv(filepath, delimiter="\t")
 
     states = np.array(data.iloc[:, 0])
-    print(f"states from load_data is {states.size}")
+    # print(f"states from load_data is {states.size}")
     actions = np.array(data.iloc[:, 1])
     returns = np.array(data.iloc[:, 2])
     timesteps = np.array(data.iloc[:, 3])

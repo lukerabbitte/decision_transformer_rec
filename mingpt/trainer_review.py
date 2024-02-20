@@ -27,6 +27,7 @@ from collections import deque
 import random
 import torch
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from torch.nn.utils.rnn import pad_sequence  # for collator function
 
@@ -44,7 +45,7 @@ class TrainerConfig:
     warmup_tokens = 375e6  # these two numbers come from the GPT-3 paper, but may not be good defaults elsewhere
     final_tokens = 260e9  # (at what point we reach 10% of original LR)
     # checkpoint settings
-    ckpt_path = None
+    ckpt_path = "checkpoints"
     num_workers = 0  # for DataLoader
 
     def __init__(self, **kwargs):
@@ -60,6 +61,8 @@ class Trainer:
         self.test_dataset = test_dataset
         self.eval_dataset = eval_dataset
         self.config = config
+        self.train_losses = []
+        self.test_losses = []
 
         # take over whatever gpus are on the system
         self.device = 'cpu'
@@ -82,10 +85,10 @@ class Trainer:
         def collate_fn(batch):
             # Where our batch is a list of (x, y, r, t) tuples
             x_batch, y_batch, r_batch, t_batch = zip(*batch)
-            x_batch = pad_sequence(x_batch, batch_first=True)
-            y_batch = pad_sequence(y_batch, batch_first=True)
-            r_batch = pad_sequence(r_batch, batch_first=True)
-            t_batch = pad_sequence(t_batch, batch_first=True)
+            # x_batch = pad_sequence(x_batch, batch_first=True) # sequences of varying length are padded
+            # y_batch = pad_sequence(y_batch, batch_first=True)
+            # r_batch = pad_sequence(r_batch, batch_first=True)
+            # t_batch = pad_sequence(t_batch, batch_first=True)
 
             return x_batch, y_batch, r_batch, t_batch
 
@@ -97,6 +100,21 @@ class Trainer:
                                 batch_size=config.batch_size,
                                 num_workers=config.num_workers,
                                 collate_fn=collate_fn)
+
+
+
+            # Iterate over the DataLoader and print a sample element
+            for batch in loader:
+                x, y, r, t = batch
+                # for state in x:
+                    # print(f"state = \n{state}\n")
+                print("States:", len(x))
+                print("Actions:", len(y))
+                print("Returns:", len(r))
+                print("Timesteps", len(t))
+                print("\n\n\n----------\n\n\n")
+                break  # Print only the first sample for debugging purposes
+
 
             losses = []
             pbar = tqdm(enumerate(loader), total=len(loader)) if is_train else enumerate(loader)
@@ -115,6 +133,7 @@ class Trainer:
                     logits, loss = model(x, y, y, r, t)
                     loss = loss.mean()  # collapse all losses if they are scattered on multiple gpus
                     losses.append(loss.item())
+                    # print(f"\nLoss in {it}:\n {loss}")
 
                 if is_train:
 
@@ -143,13 +162,18 @@ class Trainer:
 
                     # report progress
                     pbar.set_description(f"epoch {epoch + 1} iter {it}: train loss {loss.item():.5f}. lr {lr:e}")
+                    mean_loss = float(np.mean(losses))
+                    self.train_losses.append(mean_loss)
 
             if not is_train:
                 test_loss = float(np.mean(losses))
+                self.test_losses.append(test_loss)
                 logger.info("test loss: %f", test_loss)
                 return test_loss
 
-        # best_loss = float('inf')
+
+
+        best_loss = float('inf')
 
         best_return = -float('inf')
 
@@ -157,23 +181,23 @@ class Trainer:
 
         for epoch in range(config.max_epochs):
             run_epoch('train', epoch_num=epoch)
-            # if self.test_dataset is not None:
-            #     test_loss = run_epoch('test')
+            if self.test_dataset is not None:
+                test_loss = run_epoch('test')
 
-            # # supports early stopping based on the test loss, or just save always if no test set is provided
-            # good_model = self.test_dataset is None or test_loss < best_loss
-            # if self.config.ckpt_path is not None and good_model:
-            #     best_loss = test_loss
-            #     self.save_checkpoint()
+            # supports early stopping based on the test loss, or just save always if no test set is provided
+            good_model = self.test_dataset is None or test_loss < best_loss
+            if self.config.ckpt_path is not None and good_model:
+                best_loss = test_loss
+                self.save_checkpoint()
 
-            self.get_returns(50)  # ideal return for one 10-recommendation sequence of recommendations
+            self.get_returns(5)  # between 1 - 5x max return in dataset (5 for us)
 
     def get_returns(self, ret):
 
         self.model.train(False)
 
         # Get 10 unique users
-        user_ids = random.sample(range(1, (64 * 4) + 1), 10)
+        user_ids = random.sample(range(1, (256 * 4) + 1), 10)
 
         # Will contain all the total rewards per user episode
         total_rewards = []
@@ -182,6 +206,8 @@ class Trainer:
 
             # Get a complete matrix for each user showing their interaction history
             states_user, actions_user, rewards_user, returns_to_go_user = self.eval_dataset[user_id]
+            # print(actions_user.size()) # 273
+            # print(actions_user)
             rtgs = [ret]
             reward_sum = 0
 
@@ -206,21 +232,20 @@ class Trainer:
 
                 # Find the reward corresponding to the generated action from our eval dataset
                 action = sampled_action.cpu().numpy()[0, -1]
-                action += 1  # action straight from model is 0-indexed, we want 1-indexed
-                print(f"Action for user {user_id} was {action}")
+                # action += 1  # action straight from model is 0-indexed, we want 1-indexed
+                # print(f"Action for user {user_id} was {action}")
                 action_index = np.where(actions_user == action)[0][0]
                 reward = rewards_user[action_index] # rewards is a simple numpy array so no reshaping needed
-                print(f"Reward for user {user_id} was {reward}")
+                # print(f"Reward for user {user_id} was {reward}")
                 reward_sum += reward
                 actions += [sampled_action]
                 rtgs += [rtgs[-1] - reward]
 
-            print(f"Reward sum over this was {reward_sum}")
             total_rewards.append(reward_sum)
             # print(f"Recommended 10 new items to the user of id \"{user_id}\", wanted an accumulative total of {ret}, "
             #       f"got {reward_sum}")
 
         eval_return = sum(total_rewards) / 10.
-        print("Desired average return across ten 10-recommendation sequences: %d, Actual average return: %d" % (ret, eval_return))
+        print("Desired average return across ten 10-recommendation sequences: %d, Actual average return: %d" % (50, eval_return))
         self.model.train(True)
         return eval_return

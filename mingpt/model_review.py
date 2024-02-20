@@ -272,7 +272,7 @@ class GPT(nn.Module):
         x = self.drop(token_embeddings + position_embeddings)
         x = self.blocks(x)
         x = self.ln_f(x)
-        logits = self.head(x)
+        logits = self.head(x) # final linear layer just before softmax
 
         if actions is not None and self.model_type == 'reward_conditioned':
             logits = logits[:, 1::3, :]  # only keep predictions from state_embeddings

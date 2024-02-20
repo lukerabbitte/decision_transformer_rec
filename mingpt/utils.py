@@ -23,7 +23,7 @@ def set_seed(seed):
 def top_k_logits(logits, k):
     v, ix = torch.topk(logits, k)
     out = logits.clone()
-    out[out < v[:, [-1]]] = -float('Inf')
+    out[out < v[:, [-1]]] = -float('Inf') # all but the last
     return out
 
 @torch.no_grad()
