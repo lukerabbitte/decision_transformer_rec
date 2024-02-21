@@ -51,7 +51,7 @@ class ReviewDataset(Dataset):
         returns_to_go = torch.tensor(self.returns_to_go[idx:done_idx], dtype=torch.float32).unsqueeze(1)
         # print(f"returns_to_go is like: {returns_to_go.size()}")
         timesteps = torch.tensor(self.timesteps[idx:idx + 1], dtype=torch.int64).unsqueeze(1)
-        print(f"timesteps for this idx: {idx} are {timesteps.squeeze(0).squeeze(0)}")
+        # print(f"timesteps for this idx: {idx} are {timesteps.squeeze(0).squeeze(0)}")
         # print(f"timesteps is like: {timesteps.size()}")
 
         return states, actions, returns_to_go, timesteps

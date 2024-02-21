@@ -127,15 +127,17 @@ class GPT(nn.Module):
         super().__init__()
 
         self.config = config
-
         self.model_type = config.model_type
 
         # input embedding stem
         self.tok_emb = nn.Embedding(config.vocab_size, config.n_embd)
         # self.pos_emb = nn.Parameter(torch.zeros(1, config.block_size, config.n_embd))
+        print(f"config.block_size: {config.block_size}")
+        print(f"config.max_timestep: {config.max_timestep}")
         self.pos_emb = nn.Parameter(torch.zeros(1, config.block_size + 1, config.n_embd))
         self.global_pos_emb = nn.Parameter(torch.zeros(1, config.max_timestep + 1, config.n_embd))
         self.drop = nn.Dropout(config.embd_pdrop)
+
 
         # transformer
         self.blocks = nn.Sequential(*[Block(config) for _ in range(config.n_layer)])
