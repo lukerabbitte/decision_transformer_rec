@@ -143,7 +143,7 @@ class GPT(nn.Module):
         self.blocks = nn.Sequential(*[Block(config) for _ in range(config.n_layer)])
         # decoder head
         self.ln_f = nn.LayerNorm(config.n_embd)
-        self.head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.head = nn.Linear(config.n_embd, config.vocab_size, bias=False) # this is the beautiful umbrella
 
         self.block_size = config.block_size
         self.apply(self._init_weights)
@@ -232,6 +232,7 @@ class GPT(nn.Module):
         state_embeddings = self.state_encoder(states.type(torch.float32).contiguous())  # (batch, n_embd)
         state_embeddings = state_embeddings.reshape(states.shape[0], states.shape[1], self.config.n_embd)
 
+        # PROBLEM LIES HERE. IT DOESN'T KNOW WHAT SHAPE
         if actions is not None and self.model_type == 'reward_conditioned':
             rtg_embeddings = self.ret_emb(rtgs.type(torch.float32))
             action_embeddings = self.action_embeddings(

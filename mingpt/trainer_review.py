@@ -188,7 +188,8 @@ class Trainer:
                 best_loss = test_loss
                 self.save_checkpoint()
 
-            self.get_returns(5)  # between 1 - 5x max return in dataset (5 for us)
+            # Forget about eval for now. But consider passing through the s, a, rtg
+            # self.get_returns(5)  # between 1 - 5x max return in dataset (5 for us)
 
     def get_returns(self, ret):
 
@@ -233,7 +234,7 @@ class Trainer:
                 action += 1  # action straight from model is 0-indexed, we want 1-indexed
                 print(f"Action for user {user_id} was {action}")
                 action_index = np.where(actions_user == action)[0][0]
-                reward = rewards_user[action_index] # rewards is a simple numpy array so no reshaping needed
+                reward = rewards_user[action_index] # rewards_user is a simple numpy array so no reshaping needed
                 # print(f"Reward for user {user_id} was {reward}")
                 reward_sum += reward
                 actions += [sampled_action]
