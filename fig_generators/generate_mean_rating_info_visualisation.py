@@ -32,7 +32,7 @@ def plot_stats(user_mean_ratings, user_variance, mean_item_rating, figs_dir):
     plt.close()
 
 
-dataset_file = '../goodreads/goodreads_train_data_1024_users_timestep_sorted.tsv'
-figs_dir = 'figs'
+dataset_file = '../goodreads/goodreads_train_data_1024_users.tsv'
+figs_dir = '../figs'
 user_mean_ratings, user_variance, mean_item_rating = calculate_user_stats(dataset_file)
 plot_stats(user_mean_ratings, user_variance, mean_item_rating, figs_dir)

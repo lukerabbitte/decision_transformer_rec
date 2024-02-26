@@ -3,6 +3,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+def get_next_filename(figs_dir, base_filename):
+    i = 1
+    while True:
+        new_filename = f"{base_filename}_{i}.svg"
+        if not os.path.exists(os.path.join(figs_dir, new_filename)):
+            return new_filename
+        i += 1
+
+
 def plot_loss(train_losses, test_losses, context_length, batch_size, model_type, n_layer, n_head, n_embd,
               len_train_dataset, len_test_dataset, figs_dir='figs'):
     plt.rcParams.update({'font.family': 'monospace'})
@@ -29,7 +38,9 @@ def plot_loss(train_losses, test_losses, context_length, batch_size, model_type,
 
     if figs_dir:
         os.makedirs(figs_dir, exist_ok=True)
-        plt.savefig(os.path.join(figs_dir, 'loss_plot_with_info.svg'), format='svg')
+        base_filename = 'loss_plot_with_info'
+        new_filename = get_next_filename(figs_dir, base_filename)
+        plt.savefig(os.path.join(figs_dir, new_filename), format='svg')
 
 
 train_losses = [5.545003414154053, 5.269860503039783, 5.017640687242339, 4.819433363178108, 4.697008356263366,
