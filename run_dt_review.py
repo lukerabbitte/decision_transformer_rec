@@ -23,7 +23,7 @@ class ReviewDataset(Dataset):
 
     def __init__(self, states, block_size, actions, terminal_indices, returns_to_go, timesteps):
         self.block_size = block_size
-        self.vocab_size = max(actions)  # Vocab size is the space of items to recommend. Used to be 0-indexed, now our actions are 1-indexed.
+        self.vocab_size = max(actions) + 1  # Vocab size is the space of items to recommend. Used to be 0-indexed, now our actions are 1-indexed.
         self.states = states
         self.actions = actions
         self.terminal_indices = terminal_indices
@@ -50,9 +50,9 @@ class ReviewDataset(Dataset):
         # print(f"actions is like: {actions.size()}")
         returns_to_go = torch.tensor(self.returns_to_go[idx:done_idx], dtype=torch.float32).unsqueeze(1)
         # print(f"returns_to_go is like: {returns_to_go.size()}")
-        timesteps = torch.tensor(self.timesteps[idx:idx + 1], dtype=torch.int64).unsqueeze(1)
+        timesteps = torch.tensor(self.timesteps[idx:idx+1], dtype=torch.int64).unsqueeze(1)
         # print(f"timesteps for this idx: {idx} are {timesteps.squeeze(0).squeeze(0)}")
-        # print(f"timesteps is like: {timesteps.size()}")
+        # print(f"timesteps is like: {timesteps}")
 
         return states, actions, returns_to_go, timesteps
 
@@ -101,13 +101,13 @@ logging.basicConfig(
 
 # Train
 states, actions, returns, terminal_indices, returns_to_go, train_timesteps = load_data(
-    "goodreads/goodreads_train_data_1024_users_timestep_sorted.tsv")
+    "goodreads/goodreads_train_data_1024_users.tsv")
 train_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, train_timesteps)
 # print(f"max(timesteps) is {max(timesteps)}")
 
 # Test
 states, actions, returns, terminal_indices, returns_to_go, timesteps = load_data(
-    "goodreads/goodreads_test_data_1024_users_timestep_sorted.tsv")
+    "goodreads/goodreads_test_data_1024_users.tsv")
 test_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, timesteps)
 # print(f"max(timesteps) is {max(timesteps)}")
 
@@ -115,8 +115,8 @@ test_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_
 states, actions, returns, terminal_indices, returns_to_go, timesteps = load_data(
     "/home/luke/code/decision_transformer_rec/goodreads/goodreads_eval_data_1024_users.tsv")
 eval_dataset = EvaluationDataset(states, actions, returns, returns_to_go, terminal_indices, timesteps)
-# print(f"max(timesteps) is {max(timesteps)}")
 
+# print(f"max(train_timesteps) is {max(train_timesteps)}")
 mconf = GPTConfig(train_dataset.vocab_size, train_dataset.block_size,
                   n_layer=6, n_head=8, n_embd=128, model_type=args.model_type, max_timestep=max(train_timesteps))
 model = GPT(mconf)

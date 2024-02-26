@@ -98,20 +98,21 @@ class Trainer:
             data = self.train_dataset if is_train else self.test_dataset
             loader = DataLoader(data, shuffle=True, pin_memory=True,
                                 batch_size=config.batch_size,
-                                num_workers=config.num_workers)
+                                num_workers=config.num_workers,
+                                collate_fn=collate_fn)
 
             # Iterate over the DataLoader and print a sample element
-            for batch in loader:
-                x, y, r, t = batch
+            # for batch in loader:
+            #     x, y, r, t = batch
                 # for state in x:
                     # print(f"state = \n{state}\n")
-                print("States:", x)
+                # print("States:", x)
                 # print(f"at train point states is a tensor: {torch.is_tensor(x)}")
-                print("Actions:", y)
-                print("Returns:", r)
-                print("Timesteps", t)
-                print("\n\n\n----------\n\n\n")
-                break  # Print only the first sample for debugging purposes
+                # print("Actions:", y)
+                # print("Returns:", r)
+                # print("Timesteps", t)
+                # print("\n\n\n----------\n\n\n")
+            #     break  # Print only the first sample for debugging purposes
 
 
             losses = []

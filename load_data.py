@@ -11,7 +11,6 @@ def get_terminal_indices(arr):
     done_idxs.reverse()
     done_idxs = done_idxs[1:]
     done_idxs.append(len(arr))
-    print(done_idxs)
     return done_idxs
 
 
@@ -32,20 +31,20 @@ def load_data(filepath):
     # Generate returns-to-go
     for i in terminal_indices:
         rewards_by_episode = rewards[start_index:i]
+        # print(f"rewards_by_episode: {rewards_by_episode} for data up to done_idx: {i}\n")
         returns = np.append(returns, sum(rewards_by_episode))
         for j in range(i - 1, start_index - 1, -1):
             rewards_by_reverse_growing_episode = rewards_by_episode[j - start_index:i - start_index]
+            # print(f"rewards_by_reverse_growing_episode: {rewards_by_reverse_growing_episode}\n")
             returns_to_go[j] = sum(rewards_by_reverse_growing_episode)
+            # print(f"returns_to_go: {returns_to_go}")
         start_index = i
 
     terminal_indices = np.array(terminal_indices)
-    print(terminal_indices)
     returns_to_go = np.array(returns_to_go)
     timesteps = np.array(data.iloc[:, 3])
 
-    print(f"returns: {returns}")
-    print(f"returns_to_go: {returns_to_go}")
+    # print(f"returns: {returns}")
+    # print(f"returns_to_go: {returns_to_go}")
 
     return states, actions, returns, terminal_indices, returns_to_go, timesteps
-
-load_data('goodreads/goodreads_train_data_1024_users_timestep_sorted.tsv')
