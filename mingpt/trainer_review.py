@@ -82,10 +82,14 @@ class Trainer:
         raw_model = model.module if hasattr(self.model, "module") else model
         optimizer = raw_model.configure_optimizers(config)
 
-        def collate_fn(batch):
+        def custom_collate(batch):
             # Where our batch is a list of (x, y, r, t) tuples
             x_batch, y_batch, r_batch, t_batch = zip(*batch)
-            x_batch = pad_sequence(x_batch, batch_first=True) # sequences of varying length are padded
+            # print(f"x_batch size before: {len(x_batch)}")
+            # if len(x_batch) != 128:
+            #     print("state size irregular")
+            x_batch = pad_sequence(x_batch, batch_first=True)   # sequences of varying length are padded
+            # print(f"x_batch size after: {len(x_batch)}")
             y_batch = pad_sequence(y_batch, batch_first=True)
             r_batch = pad_sequence(r_batch, batch_first=True)
             t_batch = pad_sequence(t_batch, batch_first=True)
@@ -99,7 +103,7 @@ class Trainer:
             loader = DataLoader(data, shuffle=True, pin_memory=True,
                                 batch_size=config.batch_size,
                                 num_workers=config.num_workers,
-                                collate_fn=collate_fn)
+                                collate_fn=custom_collate)
 
             # Iterate over the DataLoader and print a sample element
             # for batch in loader:
@@ -162,7 +166,9 @@ class Trainer:
                     # report progress
                     pbar.set_description(f"epoch {epoch + 1} iter {it}: train loss {loss.item():.5f}. lr {lr:e}")
                     mean_loss = float(np.mean(losses))
-                    self.train_losses.append(mean_loss)
+
+            if is_train:
+                self.train_losses.append(mean_loss)
 
             if not is_train:
                 test_loss = float(np.mean(losses))
@@ -191,6 +197,9 @@ class Trainer:
 
             # Forget about eval for now. But consider passing through the s, a, rtg
             # self.get_returns(5)  # between 1 - 5x max return in dataset (5 for us)
+
+        # Return losses info for visualisation
+        return(self.train_losses, self.test_losses)
 
     def get_returns(self, ret):
 

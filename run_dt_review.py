@@ -1,4 +1,6 @@
 import logging
+
+from fig_generators.generate_loss_visualisation import plot_loss
 from load_data import load_data
 from mingpt.utils import set_seed
 import numpy as np
@@ -8,11 +10,12 @@ from mingpt.model_review import GPT, GPTConfig
 from mingpt.trainer_review import Trainer, TrainerConfig
 import argparse
 import matplotlib.pyplot as plt
+from fig_generators import generate_loss_visualisation
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=123)  # needed for mingpt
 parser.add_argument('--context_length', type=int, default=30)  # the number of tokens in context
-parser.add_argument('--epochs', type=int, default=30)
+parser.add_argument('--epochs', type=int, default=5)
 parser.add_argument('--model_type', type=str, default='reward_conditioned')
 parser.add_argument('--num_steps', type=int, default=500000)
 parser.add_argument('--batch_size', type=int, default=128)
@@ -44,15 +47,14 @@ class ReviewDataset(Dataset):
 
         idx = done_idx - block_size # get data the size of context length (30) from index up to done index
         states = torch.tensor(np.array(self.states[idx:done_idx]), dtype=torch.float32).unsqueeze(1)
-        # print(f"states is like: {states.size()}")
         # print(f"at init point states is a tensor: {torch.is_tensor(states)}")
+        # print(f"states size was: {states.size()[0]}")
         actions = torch.tensor(self.actions[idx:done_idx], dtype=torch.long).unsqueeze(1)  # (block_size, 1)
-        # print(f"actions is like: {actions.size()}")
+        # print(f"actions size was: {actions.size()[0]}")
         returns_to_go = torch.tensor(self.returns_to_go[idx:done_idx], dtype=torch.float32).unsqueeze(1)
-        # print(f"returns_to_go is like: {returns_to_go.size()}")
+        # print(f"returns_to_go size was: {returns_to_go.size()[0]}")
         timesteps = torch.tensor(self.timesteps[idx:idx+1], dtype=torch.int64).unsqueeze(1)
         # print(f"timesteps for this idx: {idx} are {timesteps.squeeze(0).squeeze(0)}")
-        # print(f"timesteps is like: {timesteps}")
 
         return states, actions, returns_to_go, timesteps
 
@@ -103,12 +105,14 @@ logging.basicConfig(
 states, actions, returns, terminal_indices, returns_to_go, train_timesteps = load_data(
     "goodreads/goodreads_train_data_1024_users.tsv")
 train_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, train_timesteps)
+len_train_dataset = len(states)
 # print(f"max(timesteps) is {max(timesteps)}")
 
 # Test
 states, actions, returns, terminal_indices, returns_to_go, timesteps = load_data(
     "goodreads/goodreads_test_data_1024_users.tsv")
 test_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, timesteps)
+len_test_dataset = len(states)
 # print(f"max(timesteps) is {max(timesteps)}")
 
 # Eval
@@ -131,13 +135,10 @@ tconf = TrainerConfig(max_epochs=epochs, batch_size=args.batch_size, learning_ra
                       max_timestep=max(train_timesteps))
 trainer = Trainer(model, train_dataset, test_dataset, eval_dataset, tconf)
 
-trainer.train()
+train_losses, test_losses = trainer.train()
 
-plt.plot(trainer.train_losses, label='Train Loss')
-plt.plot(trainer.test_losses, label='Test Loss')
-plt.title('Loss Over Epochs')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.legend()
-plt.savefig('context_length_1.png')
-plt.show()
+plot_loss(train_losses, test_losses, args.context_length, args.batch_size, args.model_type,
+          mconf.n_layer, mconf.n_head, mconf.n_embd, len_train_dataset, len_test_dataset)
+
+print(f"train_losses: {train_losses}")
+print(f"test_losses: {test_losses}")
