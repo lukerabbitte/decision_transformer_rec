@@ -15,7 +15,7 @@ from fig_generators import generate_loss_visualisation
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=123)  # needed for mingpt
 parser.add_argument('--context_length', type=int, default=30)  # the number of tokens in context
-parser.add_argument('--epochs', type=int, default=5)
+parser.add_argument('--epochs', type=int, default=30)
 parser.add_argument('--model_type', type=str, default='reward_conditioned')
 parser.add_argument('--num_steps', type=int, default=500000)
 parser.add_argument('--batch_size', type=int, default=128)
@@ -103,14 +103,14 @@ logging.basicConfig(
 
 # Train
 states, actions, returns, terminal_indices, returns_to_go, train_timesteps = load_data(
-    "goodreads/goodreads_train_data_1024_users.tsv")
+    "goodreads/goodreads_train_data_1024_users")
 train_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, train_timesteps)
 len_train_dataset = len(states)
 # print(f"max(timesteps) is {max(timesteps)}")
 
 # Test
 states, actions, returns, terminal_indices, returns_to_go, timesteps = load_data(
-    "goodreads/goodreads_test_data_1024_users.tsv")
+    "goodreads/goodreads_test_data_1024_users")
 test_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, timesteps)
 len_test_dataset = len(states)
 # print(f"max(timesteps) is {max(timesteps)}")
@@ -128,7 +128,7 @@ model = GPT(mconf)
 # initialize a trainer instance and kick off training
 epochs = args.epochs
 tconf = TrainerConfig(max_epochs=epochs, batch_size=args.batch_size, learning_rate=6e-4,
-                      lr_decay=True, warmup_tokens=512 * 20,
+                      lr_decay=False, warmup_tokens=512 * 20,
                       final_tokens=2 * len(train_dataset) * args.context_length * 3,
                       num_workers=4, seed=args.seed, model_type=args.model_type,
                       ckpt_path="checkpoints/model_checkpoint.pth",
@@ -138,7 +138,7 @@ trainer = Trainer(model, train_dataset, test_dataset, eval_dataset, tconf)
 train_losses, test_losses = trainer.train()
 
 plot_loss(train_losses, test_losses, args.context_length, args.batch_size, args.model_type,
-          mconf.n_layer, mconf.n_head, mconf.n_embd, len_train_dataset, len_test_dataset)
+          mconf.n_layer, mconf.n_head, mconf.n_embd, 'goodreads_train_data_1024_users', len_train_dataset, 'goodreads_test_data_1024_users', len_test_dataset, tconf.learning_rate, tconf.lr_decay)
 
 print(f"train_losses: {train_losses}")
 print(f"test_losses: {test_losses}")
