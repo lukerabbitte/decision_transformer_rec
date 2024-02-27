@@ -14,7 +14,7 @@ from fig_generators import generate_loss_visualisation
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=123)  # needed for mingpt
-parser.add_argument('--context_length', type=int, default=30)  # the number of tokens in context
+parser.add_argument('--context_length', type=int, default=1)  # the number of tokens in context
 parser.add_argument('--epochs', type=int, default=30)
 parser.add_argument('--model_type', type=str, default='reward_conditioned')
 parser.add_argument('--num_steps', type=int, default=500000)
@@ -103,14 +103,14 @@ logging.basicConfig(
 
 # Train
 states, actions, returns, terminal_indices, returns_to_go, train_timesteps = load_data(
-    "goodreads/goodreads_train_data_1024_users")
+    "goodreads/goodreads_data_1024_users_at_least_50.tsv")
 train_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, train_timesteps)
 len_train_dataset = len(states)
 # print(f"max(timesteps) is {max(timesteps)}")
 
 # Test
 states, actions, returns, terminal_indices, returns_to_go, timesteps = load_data(
-    "goodreads/goodreads_test_data_1024_users")
+    "goodreads/goodreads_data_1024_users.tsv")
 test_dataset = ReviewDataset(states, args.context_length * 3, actions, terminal_indices, returns_to_go, timesteps)
 len_test_dataset = len(states)
 # print(f"max(timesteps) is {max(timesteps)}")
@@ -138,7 +138,7 @@ trainer = Trainer(model, train_dataset, test_dataset, eval_dataset, tconf)
 train_losses, test_losses = trainer.train()
 
 plot_loss(train_losses, test_losses, args.context_length, args.batch_size, args.model_type,
-          mconf.n_layer, mconf.n_head, mconf.n_embd, 'goodreads_train_data_1024_users', len_train_dataset, 'goodreads_test_data_1024_users', len_test_dataset, tconf.learning_rate, tconf.lr_decay)
+          mconf.n_layer, mconf.n_head, mconf.n_embd, 'goodreads_data_1024_users_at_least_50.tsv', len_train_dataset, 'goodreads_data_1024_users.tsv', len_test_dataset, tconf.learning_rate, tconf.lr_decay)
 
 print(f"train_losses: {train_losses}")
 print(f"test_losses: {test_losses}")
