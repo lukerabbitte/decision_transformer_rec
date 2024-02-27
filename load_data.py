@@ -10,6 +10,7 @@ def get_terminal_indices(arr):
     done_idxs = list(idxs.values())
     done_idxs.reverse()
     done_idxs = done_idxs[1:]
+    done_idxs.append(len(arr))
     return done_idxs
 
 
@@ -25,20 +26,25 @@ def load_data(filepath):
     terminal_indices = get_terminal_indices(states)
     start_index = 0
     returns_to_go = np.zeros_like(rewards)
-    returns = [0]
+    returns = np.array([])
 
     # Generate returns-to-go
     for i in terminal_indices:
         rewards_by_episode = rewards[start_index:i]
-        returns[-1] += sum(rewards_by_episode)
+        # print(f"rewards_by_episode: {rewards_by_episode} for data up to done_idx: {i}\n")
+        returns = np.append(returns, sum(rewards_by_episode))
         for j in range(i - 1, start_index - 1, -1):
             rewards_by_reverse_growing_episode = rewards_by_episode[j - start_index:i - start_index]
+            # print(f"rewards_by_reverse_growing_episode: {rewards_by_reverse_growing_episode}\n")
             returns_to_go[j] = sum(rewards_by_reverse_growing_episode)
+            # print(f"returns_to_go: {returns_to_go}")
         start_index = i
 
-    print(f"returns: {returns}")
     terminal_indices = np.array(terminal_indices)
     returns_to_go = np.array(returns_to_go)
     timesteps = np.array(data.iloc[:, 3])
+
+    # print(f"returns: {returns}")
+    # print(f"returns_to_go: {returns_to_go}")
 
     return states, actions, returns, terminal_indices, returns_to_go, timesteps

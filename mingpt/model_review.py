@@ -132,11 +132,15 @@ class GPT(nn.Module):
         # input embedding stem
         self.tok_emb = nn.Embedding(config.vocab_size, config.n_embd)
         # self.pos_emb = nn.Parameter(torch.zeros(1, config.block_size, config.n_embd))
-        print(f"config.block_size: {config.block_size}")
-        print(f"config.max_timestep: {config.max_timestep}")
+        # print(f"config.block_size: {config.block_size}")
+        # print(f"config.max_timestep: {config.max_timestep}")
         self.pos_emb = nn.Parameter(torch.zeros(1, config.block_size + 1, config.n_embd))
+        # max_timestep could be 108, for 1024 users train dataset
+        # print(f"max_timestep: {config.max_timestep}")
         self.global_pos_emb = nn.Parameter(torch.zeros(1, config.max_timestep + 1, config.n_embd))
+        # print(f"self.global_pos_emb size: {self.global_pos_emb.size()}")
         self.drop = nn.Dropout(config.embd_pdrop)
+        # print(f"self.drop: {self.drop}")
 
 
         # transformer
@@ -151,13 +155,13 @@ class GPT(nn.Module):
         logger.info("number of parameters: %e", sum(p.numel() for p in self.parameters()))
 
         self.state_encoder = nn.Sequential(nn.Linear(1, config.n_embd), nn.Tanh())  # TODO could make state more complex
-        print(f"self.state_encoder:\n{self.state_encoder}\n")
+        # print(f"self.state_encoder:\n{self.state_encoder}\n")
 
         self.ret_emb = nn.Sequential(nn.Linear(1, config.n_embd), nn.Tanh())
-        print(f"self.ret_emb:\n{self.ret_emb}\n")
+        # print(f"self.ret_emb:\n{self.ret_emb}\n")
 
         self.action_embeddings = nn.Sequential(nn.Embedding(config.vocab_size, config.n_embd), nn.Tanh())
-        print(f"self.action_embeddings:\n{self.action_embeddings}\n")
+        # print(f"self.action_embeddings:\n{self.action_embeddings}\n")
 
         nn.init.normal_(self.action_embeddings[0].weight, mean=0.0, std=0.02)
 
@@ -232,14 +236,13 @@ class GPT(nn.Module):
         state_embeddings = self.state_encoder(states.type(torch.float32).contiguous())  # (batch, n_embd)
         state_embeddings = state_embeddings.reshape(states.shape[0], states.shape[1], self.config.n_embd)
 
-        # PROBLEM LIES HERE. IT DOESN'T KNOW WHAT SHAPE
         if actions is not None and self.model_type == 'reward_conditioned':
             rtg_embeddings = self.ret_emb(rtgs.type(torch.float32))
             action_embeddings = self.action_embeddings(
                 actions.type(torch.long).squeeze(-1))  # (batch, block_size, n_embd)
 
-            print(f"rtg_embeddings: {rtg_embeddings}")
-            print(f"action_embeddings: {action_embeddings}")
+            # print(f"rtg_embeddings: {rtg_embeddings}")
+            # print(f"action_embeddings shape: {action_embeddings.shape}")
 
             token_embeddings = torch.zeros(
                 (states.shape[0], states.shape[1] * 3 - int(targets is None), self.config.n_embd), dtype=torch.float32,
@@ -269,14 +272,11 @@ class GPT(nn.Module):
             raise NotImplementedError()
 
         batch_size = states.shape[0]
+        # print(f"batch_size according to states shape: {batch_size}")
         all_global_pos_emb = torch.repeat_interleave(self.global_pos_emb, batch_size,
                                                      dim=0)  # batch_size, traj_length, n_embd
 
-        position_embeddings = torch.gather(all_global_pos_emb, 1, torch.repeat_interleave(timesteps, self.config.n_embd,
-                                                                                          dim=-1)) + self.pos_emb[:, :
-                                                                                                                     token_embeddings.shape[
-                                                                                                                         1],
-                                                                                                     :]
+        position_embeddings = torch.gather(all_global_pos_emb, 1, torch.repeat_interleave(timesteps, self.config.n_embd, dim=-1)) + self.pos_emb[:, :token_embeddings.shape[1], :]
 
         x = self.drop(token_embeddings + position_embeddings)
         x = self.blocks(x)
@@ -299,7 +299,7 @@ class GPT(nn.Module):
         # targets is actual next 'word' or action
         # cross entropy loss will be low if actual next word was given strong prediction
         loss = None
-        print(f"targets size from model is {targets.size()}")
+        # (f"targets size from model is {targets.size()}")
         if targets is not None:
             loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
 

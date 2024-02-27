@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-df = pd.read_csv('goodreads/goodreads_data_1024_users.tsv', sep='\t')
+df = pd.read_csv('goodreads/goodreads_data_1024_users_at_least_50.tsv', sep='\t', names=['user_id', 'item_id', 'rating', 'timestep'])
 
 train_data = pd.DataFrame()
 test_data = pd.DataFrame()
@@ -13,10 +13,14 @@ for user in df['user_id'].unique():
     train_data = pd.concat([train_data, train])
     test_data = pd.concat([test_data, test])
 
+# Sort timesteps and make cumulative for each dataset, one-indexed
 train_data = train_data.reset_index(drop=True)
-print(train_data.head())
-test_data = test_data.reset_index(drop=True)
-print(test_data.head())
+train_data = train_data.sort_values(by=['user_id', 'timestep'])
+train_data['timestep'] = train_data.groupby('user_id').cumcount() + 1
 
-train_data.to_csv('goodreads/goodreads_train_data_1024_users.tsv', sep='\t', index=False)
-test_data.to_csv('goodreads/goodreads_test_data_1024_users.tsv', sep='\t', index=False)
+test_data = test_data.reset_index(drop=True)
+test_data = test_data.sort_values(by=['user_id', 'timestep'])
+test_data['timestep'] = test_data.groupby('user_id').cumcount() + 1
+
+train_data.to_csv('goodreads/goodreads_data_1024_users_at_least_50_train.tsv', sep='\t', index=False)
+test_data.to_csv('goodreads/goodreads_data_1024_users_at_least_50_test.tsv', sep='\t', index=False)
