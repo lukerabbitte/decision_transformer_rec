@@ -105,20 +105,6 @@ class Trainer:
                                 num_workers=config.num_workers,
                                 collate_fn=custom_collate)
 
-            # Iterate over the DataLoader and print a sample element
-            # for batch in loader:
-            #     x, y, r, t = batch
-                # for state in x:
-                    # print(f"state = \n{state}\n")
-                # print("States:", x)
-                # print(f"at train point states is a tensor: {torch.is_tensor(x)}")
-                # print("Actions:", y)
-                # print("Returns:", r)
-                # print("Timesteps", t)
-                # print("\n\n\n----------\n\n\n")
-            #     break  # Print only the first sample for debugging purposes
-
-
             losses = []
             pbar = tqdm(enumerate(loader), total=len(loader)) if is_train else enumerate(loader)
 
@@ -133,6 +119,7 @@ class Trainer:
 
                 # forward the model
                 with torch.set_grad_enabled(is_train):
+                    # print(f"the y vector being sent to the model is of size: {y.size()} and looks like:\n{y}")
                     logits, loss = model(x, y, y, r, t)
                     loss = loss.mean()  # collapse all losses if they are scattered on multiple gpus
                     losses.append(loss.item())

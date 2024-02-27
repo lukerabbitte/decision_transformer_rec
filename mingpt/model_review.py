@@ -142,12 +142,11 @@ class GPT(nn.Module):
         self.drop = nn.Dropout(config.embd_pdrop)
         # print(f"self.drop: {self.drop}")
 
-
         # transformer
         self.blocks = nn.Sequential(*[Block(config) for _ in range(config.n_layer)])
         # decoder head
         self.ln_f = nn.LayerNorm(config.n_embd)
-        self.head = nn.Linear(config.n_embd, config.vocab_size, bias=False) # this is the beautiful umbrella
+        self.head = nn.Linear(config.n_embd, config.vocab_size, bias=False)  # this is the beautiful umbrella
 
         self.block_size = config.block_size
         self.apply(self._init_weights)
@@ -276,12 +275,16 @@ class GPT(nn.Module):
         all_global_pos_emb = torch.repeat_interleave(self.global_pos_emb, batch_size,
                                                      dim=0)  # batch_size, traj_length, n_embd
 
-        position_embeddings = torch.gather(all_global_pos_emb, 1, torch.repeat_interleave(timesteps, self.config.n_embd, dim=-1)) + self.pos_emb[:, :token_embeddings.shape[1], :]
+        position_embeddings = torch.gather(all_global_pos_emb, 1, torch.repeat_interleave(timesteps, self.config.n_embd,
+                                                                                          dim=-1)) + self.pos_emb[:, :
+                                                                                                                     token_embeddings.shape[
+                                                                                                                         1],
+                                                                                                     :]
 
         x = self.drop(token_embeddings + position_embeddings)
         x = self.blocks(x)
         x = self.ln_f(x)
-        logits = self.head(x) # final linear layer just before softmax
+        logits = self.head(x)  # final linear layer just before softmax
 
         if actions is not None and self.model_type == 'reward_conditioned':
             logits = logits[:, 1::3, :]  # only keep predictions from state_embeddings
@@ -300,7 +303,21 @@ class GPT(nn.Module):
         # cross entropy loss will be low if actual next word was given strong prediction
         loss = None
         # (f"targets size from model is {targets.size()}")
+        # print(f"logits max value was: {torch.max(logits)} and min was: {torch.min(logits)}")
+        # print(f"what does logits of size: {logits.size()} look like?: \n{logits}")
+        # print(f"what does targets of size: {targets.size()} look like?: \n{targets}")
+        # print(f"what is the logits of size: {(logits.reshape(-1, logits.size(-1))).size()} we compare to?:\n{logits.reshape(-1, logits.size(-1))}\n")
+        # print(f"what is the target of size: {targets.reshape(-1).size()} we compare to?:\n{targets.reshape(-1)}\n")
+
         if targets is not None:
             loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
+
+        # Print the actual prediction:
+        logits = logits[:, -1, :]
+        probs = F.softmax(logits, dim=-1)
+        ix = torch.multinomial(probs, num_samples=1)
+        print(f"action predicted was: {ix}")
+        if torch.any(ix == 0):
+            print(f"action index 0 predicted")
 
         return logits, loss

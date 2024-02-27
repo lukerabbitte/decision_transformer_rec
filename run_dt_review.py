@@ -14,7 +14,7 @@ from fig_generators import generate_loss_visualisation
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=123)  # needed for mingpt
-parser.add_argument('--context_length', type=int, default=1)  # the number of tokens in context
+parser.add_argument('--context_length', type=int, default=30)  # the number of tokens in context
 parser.add_argument('--epochs', type=int, default=30)
 parser.add_argument('--model_type', type=str, default='reward_conditioned')
 parser.add_argument('--num_steps', type=int, default=500000)
