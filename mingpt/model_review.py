@@ -306,18 +306,19 @@ class GPT(nn.Module):
         # print(f"logits max value was: {torch.max(logits)} and min was: {torch.min(logits)}")
         # print(f"what does logits of size: {logits.size()} look like?: \n{logits}")
         # print(f"what does targets of size: {targets.size()} look like?: \n{targets}")
-        # print(f"what is the logits of size: {(logits.reshape(-1, logits.size(-1))).size()} we compare to?:\n{logits.reshape(-1, logits.size(-1))}\n")
-        # print(f"what is the target of size: {targets.reshape(-1).size()} we compare to?:\n{targets.reshape(-1)}\n")
+        print(f"what is the logits of size: {(logits.reshape(-1, logits.size(-1))).size()} we compare to?:\n{logits.reshape(-1, logits.size(-1))}\n")
+        print(f"what is the target of size: {targets.reshape(-1).size()} we compare to?:\n{targets.reshape(-1)}\n")
 
         if targets is not None:
             loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
 
-        # Print the actual prediction:
+        # Get the actual prediction:
+        # pluck the logits at the final step
+        print(f"logits was of size: {logits.size()}")
         logits = logits[:, -1, :]
+        print(f"logits plucked at final step: {logits.size()}")
         probs = F.softmax(logits, dim=-1)
         ix = torch.multinomial(probs, num_samples=1)
-        print(f"action predicted was: {ix}")
-        if torch.any(ix == 0):
-            print(f"action index 0 predicted")
+        # print(f"action predicted was: {ix}")
 
         return logits, loss

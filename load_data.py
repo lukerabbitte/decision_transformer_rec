@@ -21,6 +21,8 @@ def load_data(filepath):
     states = np.array(data.iloc[:, 0])
     # print(f"states from load_data is {states.size}")
     actions = np.array(data.iloc[:, 1])
+    # Zero-index the actions when loading in
+    actions = np.array(data.iloc[:, 1]) - 1
     rewards = np.array(data.iloc[:, 2])
     timesteps = np.array(data.iloc[:, 3])
     terminal_indices = get_terminal_indices(states)
